@@ -6,130 +6,138 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body, html {
-      margin: 0; padding: 0;
-      width: 100%; height: 100%;
+      margin: 0;
+      padding: 0;
+      height: 100%;
       overflow: hidden;
+      font-family: Arial, sans-serif;
       background: black;
+      color: white;
     }
     #camera {
-      position: absolute;
+      position: fixed;
       top: 0; left: 0;
       width: 100%; height: 100%;
       object-fit: cover;
       z-index: 0;
     }
     #model-frame {
-      position: absolute;
-      top: 0; left: 0;
+      position: fixed;
       width: 100%; height: 100%;
-      z-index: 1;
+      top: 0; left: 0;
       border: none;
-      pointer-events: auto;
+      z-index: 1;
+      pointer-events: none; /* Prevent accidental clicks */
     }
     #controls {
-      position: absolute;
-      bottom: 20px; left: 50%;
+      position: fixed;
+      bottom: 10px;
+      left: 50%;
       transform: translateX(-50%);
-      z-index: 2;
       display: flex;
       gap: 10px;
+      z-index: 2;
     }
-    button {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      background: rgba(0,0,0,0.6);
-      color: white;
+    select, button {
+      padding: 10px;
       font-size: 16px;
+      border-radius: 8px;
+      border: none;
     }
-    #snapshot {
-      position: absolute;
-      top: 10px; right: 10px;
+    #gallery {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      width: 120px;
+      height: 80%;
+      overflow-y: auto;
       z-index: 3;
-      max-width: 40%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .photo {
+      width: 100%;
       border: 2px solid white;
-      display: none;
+      border-radius: 8px;
+      position: relative;
+      touch-action: pan-y;
     }
   </style>
 </head>
 <body>
   <video id="camera" autoplay playsinline></video>
-
-  <!-- Sketchfab iframe -->
   <iframe id="model-frame"
-    src="https://sketchfab.com/models/7w7pAfrDd4WO1X9HeCFgpyK8pXo/embed"
-    allow="autoplay; fullscreen; xr-spatial-tracking"
-    mozallowfullscreen="true"
-    webkitallowfullscreen="true">
+          src="https://sketchfab.com/models/7w7pAfrDd4WO1X9HeCFgpyK8pXo/embed"
+          allow="autoplay; fullscreen; xr-spatial-tracking"
+          allowfullscreen>
   </iframe>
 
-  <!-- Controls -->
   <div id="controls">
-    <button id="snapBtn">📸 Snap</button>
-    <button id="recordBtn">⏺ Start Recording</button>
-    <button id="stopBtn" disabled>⏹ Stop Recording</button>
+    <select id="modelSelect">
+      <option value="7w7pAfrDd4WO1X9HeCFgpyK8pXo">Model 1</option>
+      <option value="82dwJt5LmBxA4n1AqGd2qLZ4d9">Model 2</option>
+      <option value="ba7qK5KL5u72hQ2yKQK8oXp7W">Model 3</option>
+    </select>
+    <button id="snap">📸 Snap</button>
   </div>
 
-  <!-- Snapshot Preview -->
-  <img id="snapshot" alt="Snapshot preview"/>
+  <div id="gallery"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <canvas id="snapshotCanvas" style="display:none;"></canvas>
+
   <script>
     const video = document.getElementById('camera');
-    const snapBtn = document.getElementById('snapBtn');
-    const recordBtn = document.getElementById('recordBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const snapshot = document.getElementById('snapshot');
+    const modelFrame = document.getElementById('model-frame');
+    const modelSelect = document.getElementById('modelSelect');
+    const snapBtn = document.getElementById('snap');
+    const gallery = document.getElementById('gallery');
+    const canvas = document.getElementById('snapshotCanvas');
+    const ctx = canvas.getContext('2d');
 
-    // Camera as background
-    navigator.mediaDevices.getUserMedia({ video: true })
-      .then(stream => {
+    // Start camera
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         video.srcObject = stream;
-      })
-      .catch(err => {
-        alert("Camera not accessible: " + err);
-      });
+      } catch (err) {
+        alert("Camera access denied or not available.");
+        console.error(err);
+      }
+    }
+    startCamera();
 
-    // Take snapshot
-    snapBtn.addEventListener("click", () => {
-      html2canvas(document.body).then(canvas => {
-        snapshot.src = canvas.toDataURL("image/png");
-        snapshot.style.display = "block";
-      });
+    // Change model on dropdown
+    modelSelect.addEventListener('change', () => {
+      const id = modelSelect.value;
+      modelFrame.src = `https://sketchfab.com/models/${id}/embed`;
     });
 
-    // Record video of whole screen (camera + model)
-    let mediaRecorder;
-    let chunks = [];
+    // Snap picture
+    snapBtn.addEventListener('click', () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    recordBtn.addEventListener("click", () => {
-      navigator.mediaDevices.getDisplayMedia({
-        video: { mediaSource: "screen" },
-        audio: false
-      }).then(stream => {
-        mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = e => chunks.push(e.data);
-        mediaRecorder.onstop = e => {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'recording.webm';
-          a.click();
-          chunks = [];
-        };
-        mediaRecorder.start();
-        recordBtn.disabled = true;
-        stopBtn.disabled = false;
-      }).catch(err => {
-        alert("Recording failed: " + err);
+      // Overlay modelFrame snapshot (rough approach: screenshot not possible due to cross-origin iframe)
+      // Instead we just save camera photo
+      const dataUrl = canvas.toDataURL('image/png');
+
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.className = 'photo';
+
+      // Swipe to delete
+      let startX = 0;
+      img.addEventListener('touchstart', e => startX = e.touches[0].clientX);
+      img.addEventListener('touchend', e => {
+        let endX = e.changedTouches[0].clientX;
+        if (Math.abs(endX - startX) > 50) {
+          img.remove();
+        }
       });
-    });
 
-    stopBtn.addEventListener("click", () => {
-      mediaRecorder.stop();
-      recordBtn.disabled = false;
-      stopBtn.disabled = true;
+      gallery.appendChild(img);
     });
   </script>
 </body>
