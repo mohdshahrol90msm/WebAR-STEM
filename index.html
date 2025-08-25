@@ -1,91 +1,136 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>Markerless WebAR - Multiple Models</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebAR with Sketchfab Embed</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body, html {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: black;
+    }
+    #camera {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+    #model-frame {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 1;
+      border: none;
+      pointer-events: auto;
+    }
+    #controls {
+      position: absolute;
+      bottom: 20px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      font-size: 16px;
+    }
+    #snapshot {
+      position: absolute;
+      top: 10px; right: 10px;
+      z-index: 3;
+      max-width: 40%;
+      border: 2px solid white;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <video id="camera" autoplay playsinline></video>
 
-    <!-- A-Frame + extras -->
-    <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/aframe-ar-hit-test-component@1.1.2/dist/aframe-ar-hit-test-component.min.js"></script>
+  <!-- Sketchfab iframe -->
+  <iframe id="model-frame"
+    src="https://sketchfab.com/models/7w7pAfrDd4WO1X9HeCFgpyK8pXo/embed"
+    allow="autoplay; fullscreen; xr-spatial-tracking"
+    mozallowfullscreen="true"
+    webkitallowfullscreen="true">
+  </iframe>
 
-    <style>
-      body { margin: 0; overflow: hidden; font-family: sans-serif; }
-      #overlay {
-        position: fixed;
-        bottom: 15px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 10px;
-        background: rgba(0,0,0,0.6);
-        padding: 10px;
-        border-radius: 10px;
-        z-index: 999;
-      }
-      select, button {
-        padding: 8px 12px;
-        border: none;
-        border-radius: 6px;
-        font-size: 14px;
-      }
-      select { background: white; color: black; }
-      button { background: #007bff; color: white; cursor: pointer; }
-      button:hover { background: #0056b3; }
-    </style>
-  </head>
-  <body>
-    <a-scene
-      renderer="colorManagement: true; physicallyCorrectLights"
-      xr-mode-ui="enabled: true"
-      embedded
-      vr-mode-ui="enabled: false"
-      webxr="optionalFeatures: hit-test, dom-overlay; overlayElement: #overlay">
+  <!-- Controls -->
+  <div id="controls">
+    <button id="snapBtn">📸 Snap</button>
+    <button id="recordBtn">⏺ Start Recording</button>
+    <button id="stopBtn" disabled>⏹ Stop Recording</button>
+  </div>
 
-      <a-camera position="0 0 0"></a-camera>
+  <!-- Snapshot Preview -->
+  <img id="snapshot" alt="Snapshot preview"/>
 
-      <!-- Default model (hidden until placed) -->
-      <a-entity
-        id="model"
-        gltf-model="url(./models/robot.glb)"
-        visible="false"
-        scale="0.2 0.2 0.2"
-        shadow="cast: true">
-      </a-entity>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script>
+    const video = document.getElementById('camera');
+    const snapBtn = document.getElementById('snapBtn');
+    const recordBtn = document.getElementById('recordBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const snapshot = document.getElementById('snapshot');
 
-      <!-- Hit test cursor -->
-      <a-entity
-        id="cursor"
-        ar-hit-test="target:#model; type:map; offset:0 0 0">
-      </a-entity>
-    </a-scene>
-
-    <!-- UI -->
-    <div id="overlay">
-      <select id="model-select">
-        <option value="./models/robot.glb">Robot</option>
-        <option value="./models/mascot.glb">Mascot</option>
-        <option value="./models/playground.glb">Playground</option>
-      </select>
-      <button id="place-btn">📍 Place</button>
-    </div>
-
-    <script>
-      const select = document.getElementById("model-select");
-      const placeBtn = document.getElementById("place-btn");
-      const model = document.getElementById("model");
-
-      // 🔄 Switch model before placing
-      select.addEventListener("change", () => {
-        model.setAttribute("gltf-model", "url(" + select.value + ")");
-        model.setAttribute("visible", "false"); // hide until placed
+    // Camera as background
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        video.srcObject = stream;
+      })
+      .catch(err => {
+        alert("Camera not accessible: " + err);
       });
 
-      // 📍 Place model on surface
-      placeBtn.addEventListener("click", () => {
-        model.setAttribute("visible", "true");
+    // Take snapshot
+    snapBtn.addEventListener("click", () => {
+      html2canvas(document.body).then(canvas => {
+        snapshot.src = canvas.toDataURL("image/png");
+        snapshot.style.display = "block";
       });
-    </script>
-  </body>
+    });
+
+    // Record video of whole screen (camera + model)
+    let mediaRecorder;
+    let chunks = [];
+
+    recordBtn.addEventListener("click", () => {
+      navigator.mediaDevices.getDisplayMedia({
+        video: { mediaSource: "screen" },
+        audio: false
+      }).then(stream => {
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+        mediaRecorder.onstop = e => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'recording.webm';
+          a.click();
+          chunks = [];
+        };
+        mediaRecorder.start();
+        recordBtn.disabled = true;
+        stopBtn.disabled = false;
+      }).catch(err => {
+        alert("Recording failed: " + err);
+      });
+    });
+
+    stopBtn.addEventListener("click", () => {
+      mediaRecorder.stop();
+      recordBtn.disabled = false;
+      stopBtn.disabled = true;
+    });
+  </script>
+</body>
 </html>
