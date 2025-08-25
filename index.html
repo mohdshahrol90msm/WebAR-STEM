@@ -2,201 +2,107 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>WebAR Sketchfab with Capture</title>
+  <title>Web AR with Models</title>
   <style>
-    body, html {
-      margin: 0; padding: 0;
-      overflow: hidden;
-      font-family: sans-serif;
+    body { margin: 0; overflow: hidden; }
+    #ui {
+      position: fixed; top: 10px; left: 10px;
+      background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; color: white;
     }
-    #cameraView {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      object-fit: cover;
-      z-index: 1;
-    }
-    #modelFrame {
-      position: absolute;
-      top: 50%; left: 50%;
-      width: 400px; height: 400px;   /* Bigger size */
-      transform: translate(-50%, -50%) scale(1);
-      border: none;
-      z-index: 2;
-      touch-action: none;
-    }
-    #controls {
-      position: absolute;
-      bottom: 10px; left: 50%;
-      transform: translateX(-50%);
-      z-index: 3;
-      display: flex;
-      gap: 10px;
-      background: rgba(0,0,0,0.5);
-      padding: 8px;
-      border-radius: 8px;
-    }
-    button, select {
-      padding: 6px 12px;
-      border-radius: 6px;
-      border: none;
-      cursor: pointer;
-    }
-    #gallery {
-      position: absolute;
-      top: 10px; right: 10px;
-      z-index: 4;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .thumb {
-      width: 80px; height: 80px;
-      object-fit: cover;
-      border: 2px solid white;
-      border-radius: 6px;
-    }
+    #photos { position: fixed; bottom: 10px; left: 10px; display: flex; gap: 10px; }
+    #photos img { width: 80px; border: 2px solid white; border-radius: 6px; cursor: pointer; }
   </style>
 </head>
 <body>
-  <video id="cameraView" autoplay playsinline></video>
-  <iframe id="modelFrame" allow="autoplay; fullscreen; xr-spatial-tracking"></iframe>
-
-  <div id="controls">
+  <div id="ui">
     <select id="modelSelect">
-      <option value="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1">Model 1</option>
-      <option value="https://sketchfab.com/models/c9de125cb9d8407abed1dc8f6a4676a8/embed?autostart=1&transparent=1">Model 2</option>
-      <option value="https://sketchfab.com/models/bb6a8eeabedf49d5ad235405840ef013/embed?autostart=1&transparent=1">Model 3</option>
-      <option value="https://sketchfab.com/models/54e857fc6e4944608b87e47b833843c9/embed?autostart=1&transparent=1">Model 4</option>
+      <option value="model1.glb">Model 1</option>
+      <option value="model2.glb">Model 2</option>
+      <option value="model3.glb">Model 3</option>
+      <option value="model4.glb">Model 4</option>
     </select>
-    <button id="snap">📸 Snap</button>
-    <button id="record">⏺️ Record</button>
-    <button id="stop">⏹️ Stop</button>
+    <button id="snapBtn">📸 Snap</button>
+    <button id="recordBtn">⏺️ Record</button>
+    <button id="stopBtn">⏹ Stop</button>
   </div>
+  <div id="photos"></div>
 
-  <div id="gallery"></div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/webxr/ARButton.js"></script>
 
-  <canvas id="captureCanvas" style="display:none;"></canvas>
+  <script>
+    let scene, camera, renderer, loader, currentModel, mediaRecorder, recordedChunks = [];
 
-<script>
-const video = document.getElementById("cameraView");
-const modelFrame = document.getElementById("modelFrame");
-const modelSelect = document.getElementById("modelSelect");
-const gallery = document.getElementById("gallery");
-const canvas = document.getElementById("captureCanvas");
-const ctx = canvas.getContext("2d");
+    init();
+    function init() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
+      renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
 
-let mediaRecorder, recordedChunks = [];
+      document.body.appendChild(ARButton.createButton(renderer));
 
-// Start camera
-navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
-  video.srcObject = stream;
-}).catch(err => alert("Camera error: " + err));
+      loader = new THREE.GLTFLoader();
 
-// Load first model
-modelFrame.src = modelSelect.value;
-modelSelect.addEventListener("change", () => {
-  modelFrame.src = modelSelect.value;
-});
+      loadModel(document.getElementById("modelSelect").value);
 
-// Drag & pinch zoom
-let scale = 1, startDist = 0, startX = 0, startY = 0, offsetX = 0, offsetY = 0;
+      document.getElementById("modelSelect").addEventListener("change", (e)=>{
+        if (currentModel) scene.remove(currentModel);
+        loadModel(e.target.value);
+      });
 
-modelFrame.addEventListener("touchstart", e => {
-  if (e.touches.length === 2) {
-    startDist = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
-  } else if (e.touches.length === 1) {
-    startX = e.touches[0].clientX - offsetX;
-    startY = e.touches[0].clientY - offsetY;
-  }
-}, { passive: false });
+      document.getElementById("snapBtn").addEventListener("click", snapPhoto);
+      document.getElementById("recordBtn").addEventListener("click", startRecording);
+      document.getElementById("stopBtn").addEventListener("click", stopRecording);
 
-modelFrame.addEventListener("touchmove", e => {
-  if (e.touches.length === 2) {
-    const newDist = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
-    scale *= newDist / startDist;
-    startDist = newDist;
-  } else if (e.touches.length === 1) {
-    offsetX = e.touches[0].clientX - startX;
-    offsetY = e.touches[0].clientY - startY;
-  }
-  modelFrame.style.transform =
-    `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) scale(${scale})`;
-}, { passive: false });
+      renderer.setAnimationLoop(()=>{ renderer.render(scene, camera); });
+    }
 
-// Snap picture
-document.getElementById("snap").onclick = () => {
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    function loadModel(url){
+      loader.load(url, gltf=>{
+        currentModel = gltf.scene;
+        currentModel.scale.set(0.5,0.5,0.5);  // Adjust size
+        currentModel.position.set(0,0,-1);   // Place in front of camera
+        scene.add(currentModel);
+      });
+    }
 
-  // Draw modelFrame snapshot
-  html2canvas(modelFrame, { backgroundColor: null }).then(modelCanvas => {
-    ctx.drawImage(modelCanvas, (canvas.width - modelFrame.offsetWidth)/2 + offsetX,
-      (canvas.height - modelFrame.offsetHeight)/2 + offsetY,
-      modelFrame.offsetWidth * scale,
-      modelFrame.offsetHeight * scale);
+    function snapPhoto(){
+      let link = document.createElement("a");
+      link.download = "snapshot.png";
+      link.href = renderer.domElement.toDataURL("image/png");
+      link.click();
+      
+      let img = document.createElement("img");
+      img.src = link.href;
+      img.onclick = ()=> img.remove();
+      document.getElementById("photos").appendChild(img);
+    }
 
-    const img = document.createElement("img");
-    img.src = canvas.toDataURL("image/png");
-    img.className = "thumb";
+    function startRecording(){
+      recordedChunks = [];
+      let stream = renderer.domElement.captureStream();
+      mediaRecorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+      mediaRecorder.ondataavailable = e=> recordedChunks.push(e.data);
+      mediaRecorder.onstop = saveRecording;
+      mediaRecorder.start();
+    }
 
-    // Tap to delete
-    img.onclick = () => img.remove();
+    function stopRecording(){
+      mediaRecorder.stop();
+    }
 
-    // Download link
-    const link = document.createElement("a");
-    link.href = img.src;
-    link.download = "snapshot.png";
-    link.appendChild(img);
-
-    gallery.appendChild(link);
-  });
-};
-
-// Record video
-document.getElementById("record").onclick = async () => {
-  const cameraStream = video.srcObject;
-  const canvasStream = canvas.captureStream(30);
-
-  // Merge streams
-  const combinedStream = new MediaStream([
-    ...cameraStream.getTracks(),
-    ...canvasStream.getTracks()
-  ]);
-
-  mediaRecorder = new MediaRecorder(combinedStream, { mimeType: "video/webm" });
-  recordedChunks = [];
-  mediaRecorder.ondataavailable = e => {
-    if (e.data.size > 0) recordedChunks.push(e.data);
-  };
-  mediaRecorder.onstop = () => {
-    const blob = new Blob(recordedChunks, { type: "video/webm" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "recording.webm";
-    a.textContent = "🎬 Download Video";
-    gallery.appendChild(a);
-  };
-  mediaRecorder.start();
-};
-
-// Stop recording
-document.getElementById("stop").onclick = () => {
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    mediaRecorder.stop();
-  }
-};
-</script>
-
-<!-- html2canvas for snapshot overlay -->
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    function saveRecording(){
+      let blob = new Blob(recordedChunks, { type: "video/webm" });
+      let url = URL.createObjectURL(blob);
+      let a = document.createElement("a");
+      a.href = url;
+      a.download = "recorded-video.webm";
+      a.click();
+    }
+  </script>
 </body>
 </html>
