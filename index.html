@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web AR Photobooth</title>
+  <script type="module" src="https://unpkg.com/three@0.150.1/build/three.module.js"></script>
+  <script type="module" src="https://unpkg.com/three@0.150.1/examples/jsm/loaders/GLTFLoader.js"></script>
+  <script type="module" src="https://unpkg.com/three@0.150.1/examples/jsm/controls/TransformControls.js"></script>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+    }
+    #cameraFeed, #threeCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: rgba(0,0,0,0.4);
+      padding: 10px;
+      border-radius: 10px;
+    }
+    select, button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      background: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    select {
+      background: white;
+      color: black;
+    }
+  </style>
+</head>
+<body>
+  <!-- Camera Feed -->
+  <video id="cameraFeed" autoplay playsinline muted></video>
+  <!-- 3D Scene -->
+  <canvas id="threeCanvas"></canvas>
+
+  <div id="controls">
+    <select id="modelSelector">
+      <option value="">-- Choose a Model --</option>
+      <option value="robot1.glb">Little Robot</option>
+      <option value="robot2.glb">Robot Playground</option>
+      <option value="robot3.glb">Robot 1</option>
+      <option value="robot4.glb">Widget Robot Mascot</option>
+    </select>
+    <button id="addModelBtn">➕ Add Model</button>
+    <button id="photoBtn">📸 Take Photo</button>
+    <button id="videoBtn">🎥 Start Video</button>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.150.1/build/three.module.js';
+    import { GLTFLoader } from 'https://unpkg.com/three@0.150.1/examples/jsm/loaders/GLTFLoader.js';
+    import { TransformControls } from 'https://unpkg.com/three@0.150.1/examples/jsm/controls/TransformControls.js';
+
+    const video = document.getElementById('cameraFeed');
+    const canvas = document.getElementById('threeCanvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+    camera.position.z = 3;
+
+    const light = new THREE.HemisphereLight(0xffffff, 0x444444);
+    scene.add(light);
+
+    const loader = new GLTFLoader();
+    const models = [];
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let selectedModel = null;
+
+    const controls = new TransformControls(camera, renderer.domElement);
+    controls.addEventListener('dragging-changed', (event) => {
+      renderer.domElement.style.pointerEvents = event.value ? 'none' : 'auto';
+    });
+    scene.add(controls);
+
+    // Add selected model
+    document.getElementById('addModelBtn').addEventListener('click', () => {
+      const modelUrl = document.getElementById('modelSelector').value;
+      if (!modelUrl) return;
+      loader.load(modelUrl, (gltf) => {
+        const model = gltf.scene;
+        model.scale.set(0.5, 0.5, 0.5);
+        model.position.x = (Math.random() - 0.5) * 2;
+        model.position.y = (Math.random() - 0.5) * 2;
+        models.push(model);
+        scene.add(model);
+      });
+    });
+
+    // Select model on click
+    renderer.domElement.addEventListener('pointerdown', (event) => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(models, true);
+      if (intersects.length > 0) {
+        const object = intersects[0].object;
+        selectedModel = object;
+        while (selectedModel.parent && !models.includes(selectedModel)) {
+          selectedModel = selectedModel.parent;
+        }
+        controls.attach(selectedModel);
+      } else {
+        controls.detach();
+      }
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Camera setup
+    async function setupCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+        video.srcObject = stream;
+        await video.play();
+      } catch (err) {
+        console.error('Camera error:', err);
+      }
+    }
+    setupCamera();
+
+    // Photo capture
+    const photoBtn = document.getElementById('photoBtn');
+    photoBtn.addEventListener('click', () => {
+      const output = document.createElement('canvas');
+      output.width = window.innerWidth;
+      output.height = window.innerHeight;
+      const ctx = output.getContext('2d');
+
+      ctx.drawImage(video, 0, 0, output.width, output.height);
+      ctx.drawImage(canvas, 0, 0, output.width, output.height);
+
+      const link = document.createElement('a');
+      link.download = 'photobooth.png';
+      link.href = output.toDataURL();
+      link.click();
+    });
+
+    // Video recording
+    let mediaRecorder, recordedChunks = [], recording = false;
+    const videoBtn = document.getElementById('videoBtn');
+
+    videoBtn.addEventListener('click', () => {
+      if (!recording) {
+        const combinedStream = new MediaStream();
+        const videoStream = video.srcObject;
+        if (videoStream) videoStream.getTracks().forEach(track => combinedStream.addTrack(track));
+        const canvasStream = canvas.captureStream(30);
+        canvasStream.getTracks().forEach(track => combinedStream.addTrack(track));
+
+        mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+        mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'photobooth-video.webm';
+          a.click();
+          recordedChunks = [];
+        };
+        mediaRecorder.start();
+        videoBtn.textContent = '⏹ Stop Video';
+        recording = true;
+      } else {
+        mediaRecorder.stop();
+        videoBtn.textContent = '🎥 Start Video';
+        recording = false;
+      }
+    });
+  </script>
+</body>
+</html>
