@@ -2,124 +2,198 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>WebAR with Sketchfab Embed</title>
+  <title>WebAR with Sketchfab</title>
   <style>
     body, html {
       margin: 0; padding: 0;
-      width: 100%; height: 100%;
-      overflow: hidden; background: black;
+      overflow: hidden;
       font-family: Arial, sans-serif;
+      height: 100%; width: 100%;
+      background: black;
     }
-    #cameraView {
+    video#camera {
       position: fixed;
       top: 0; left: 0;
       width: 100%; height: 100%;
       object-fit: cover;
       z-index: 0;
     }
-    #modelFrame {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+    #model-frame {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 400px; height: 400px;
+      transform: translate(-50%, -50%);
       border: none;
       z-index: 1;
-      pointer-events: none; /* prevent blocking UI */
+      touch-action: none;
     }
     #controls {
       position: fixed;
       bottom: 10px; left: 50%;
       transform: translateX(-50%);
-      display: flex; gap: 10px;
+      display: flex;
+      gap: 10px;
       z-index: 2;
     }
     button, select {
-      padding: 10px 15px;
+      padding: 8px 12px;
       font-size: 16px;
-      border: none;
       border-radius: 8px;
-      cursor: pointer;
+      border: none;
+      background: white;
     }
-    button { background: #007bff; color: white; }
     #gallery {
       position: fixed;
-      top: 10px; right: 10px;
-      width: 120px; max-height: 80vh;
+      top: 0; right: 0;
+      width: 120px;
+      height: 100%;
       overflow-y: auto;
-      z-index: 2;
-      background: rgba(0,0,0,0.4);
-      padding: 5px;
-      border-radius: 8px;
+      background: rgba(0,0,0,0.5);
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
     #gallery img {
-      width: 100%;
-      margin-bottom: 5px;
-      border-radius: 6px;
+      width: 100px;
+      margin: 5px;
+      border-radius: 8px;
       cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <video id="cameraView" autoplay playsinline></video>
-  <iframe id="modelFrame"></iframe>
+
+  <video id="camera" autoplay playsinline></video>
+
+  <iframe id="model-frame"
+    src="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1"
+    allow="autoplay; fullscreen; xr-spatial-tracking"
+    mozallowfullscreen="true"
+    webkitallowfullscreen="true">
+  </iframe>
 
   <div id="controls">
-    <select id="modelSelect">
-      <option value="">-- Choose Model --</option>
+    <select id="model-select">
       <option value="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1">Model 1</option>
       <option value="https://sketchfab.com/models/c9de125cb9d8407abed1dc8f6a4676a8/embed?autostart=1&transparent=1">Model 2</option>
       <option value="https://sketchfab.com/models/bb6a8eeabedf49d5ad235405840ef013/embed?autostart=1&transparent=1">Model 3</option>
       <option value="https://sketchfab.com/models/54e857fc6e4944608b87e47b833843c9/embed?autostart=1&transparent=1">Model 4</option>
     </select>
-    <button id="snapBtn">📸 Snap</button>
+    <button id="snap">📸 Snap</button>
+    <button id="record">⏺️ Record</button>
   </div>
 
   <div id="gallery"></div>
 
-  <canvas id="snapshotCanvas" style="display:none;"></canvas>
+  <canvas id="canvas" style="display:none;"></canvas>
 
   <script>
-    const video = document.getElementById('cameraView');
-    const modelFrame = document.getElementById('modelFrame');
-    const modelSelect = document.getElementById('modelSelect');
-    const snapBtn = document.getElementById('snapBtn');
+    const video = document.getElementById('camera');
+    const iframe = document.getElementById('model-frame');
+    const select = document.getElementById('model-select');
+    const snapBtn = document.getElementById('snap');
+    const recordBtn = document.getElementById('record');
     const gallery = document.getElementById('gallery');
-    const canvas = document.getElementById('snapshotCanvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.getElementById('canvas');
 
-    // Start camera
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-        video.srcObject = stream;
-      } catch (err) {
-        alert("Camera access denied or unavailable.");
-        console.error(err);
-      }
-    }
-    startCamera();
+    // Camera access
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(stream => { video.srcObject = stream; });
 
-    // Change model
-    modelSelect.addEventListener('change', () => {
-      modelFrame.src = modelSelect.value;
+    // Switch model
+    select.addEventListener('change', () => {
+      iframe.src = select.value;
     });
+
+    // Drag & Resize
+    let scale = 1, lastDist = 0;
+    let pos = {x: window.innerWidth/2, y: window.innerHeight/2};
+    let dragging = false, lastTouch = null;
+
+    iframe.addEventListener('pointerdown', e => {
+      dragging = true;
+      lastTouch = {x: e.clientX, y: e.clientY};
+    });
+    window.addEventListener('pointerup', () => dragging = false);
+    window.addEventListener('pointermove', e => {
+      if (dragging && lastTouch) {
+        pos.x += e.clientX - lastTouch.x;
+        pos.y += e.clientY - lastTouch.y;
+        iframe.style.left = pos.x + 'px';
+        iframe.style.top = pos.y + 'px';
+        lastTouch = {x: e.clientX, y: e.clientY};
+      }
+    });
+    window.addEventListener('touchmove', e => {
+      if (e.touches.length === 2) {
+        let dx = e.touches[0].clientX - e.touches[1].clientX;
+        let dy = e.touches[0].clientY - e.touches[1].clientY;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+        if (lastDist) {
+          scale *= dist / lastDist;
+          iframe.style.transform = `translate(-50%, -50%) scale(${scale})`;
+        }
+        lastDist = dist;
+      }
+    });
+    window.addEventListener('touchend', () => lastDist = 0);
 
     // Snapshot
     snapBtn.addEventListener('click', () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-
-      // Draw camera
+      const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Draw model iframe snapshot (approximate with overlay box since iframe can't be drawn directly)
-      ctx.fillStyle = "rgba(255,255,255,0.3)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Draw iframe snapshot
+      html2canvas(iframe).then(modelCanvas => {
+        ctx.drawImage(modelCanvas, (canvas.width/2 - iframe.offsetWidth/2),
+          (canvas.height/2 - iframe.offsetHeight/2),
+          iframe.offsetWidth, iframe.offsetHeight);
 
-      const img = new Image();
-      img.src = canvas.toDataURL("image/png");
-      img.addEventListener('click', () => img.remove());
-      gallery.appendChild(img);
+        let img = document.createElement('img');
+        img.src = canvas.toDataURL('image/png');
+        img.addEventListener('click', () => gallery.removeChild(img));
+        img.addEventListener('dblclick', () => {
+          let link = document.createElement('a');
+          link.href = img.src;
+          link.download = "snapshot.png";
+          link.click();
+        });
+        gallery.appendChild(img);
+      });
+    });
+
+    // Video recording
+    let recorder, chunks = [], recording = false;
+    recordBtn.addEventListener('click', () => {
+      if (!recording) {
+        let stream = video.srcObject;
+        recorder = new MediaRecorder(stream);
+        recorder.ondataavailable = e => chunks.push(e.data);
+        recorder.onstop = () => {
+          let blob = new Blob(chunks, { type: 'video/webm' });
+          chunks = [];
+          let url = URL.createObjectURL(blob);
+          let a = document.createElement('a');
+          a.href = url;
+          a.download = "recording.webm";
+          a.click();
+        };
+        recorder.start();
+        recordBtn.textContent = "⏹️ Stop";
+        recording = true;
+      } else {
+        recorder.stop();
+        recordBtn.textContent = "⏺️ Record";
+        recording = false;
+      }
     });
   </script>
+
+  <!-- For iframe snapshot -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
 </body>
 </html>
