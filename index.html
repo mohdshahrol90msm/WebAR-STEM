@@ -1,147 +1,91 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>WebAR with Sketchfab Models</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
-  <!-- Libraries -->
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-  
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: black;
-      font-family: sans-serif;
-    }
-    #viewer {
-      width: 100vw;
-      height: 100vh;
-      position: relative;
-    }
-    iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-      position: absolute;
-      top: 0;
-      left: 0;
-    }
-    #controls {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 10px;
-      z-index: 20;
-    }
-    button, select {
-      padding: 8px 12px;
-      font-size: 14px;
-      border: none;
-      border-radius: 6px;
-      background: #007bff;
-      color: white;
-      cursor: pointer;
-    }
-    button:hover, select:hover {
-      background: #0056b3;
-    }
-    #preview {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      max-width: 150px;
-      border: 2px solid white;
-      display: none;
-      z-index: 30;
-    }
-  </style>
-</head>
-<body>
-  <div id="viewer">
-    <!-- Default model -->
-    <iframe id="sketchfab-frame" 
-      src="https://sketchfab.com/models/7w7pAfrEYVmqVJzszZ3j84FhV4D/embed" 
-      allow="autoplay; fullscreen; vr">
-    </iframe>
-    
-    <!-- Controls -->
-    <div id="controls">
-      <select id="model-select">
-        <option value="https://sketchfab.com/models/bb6a8eeabedf49d5ad235405840ef013/embed?autostart=1&transparent=1">Robot Mascot</option>
-        <option value="https://sketchfab.com/models/c9de125cb9d8407abed1dc8f6a4676a8/embed?autostart=1&transparent=1">Little Robot</option>
-        <option value="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1">Robot Playground</option>
-        <!-- add up to 10 -->
-      </select>
-      <button id="capture-btn">📸 Picture</button>
-      <button id="record-btn">🎥 Start Rec</button>
-    </div>
-    
-    <!-- Screenshot Preview -->
-    <img id="preview" alt="screenshot preview"/>
-  </div>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Markerless WebAR - Multiple Models</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <script>
-    const iframe = document.getElementById("sketchfab-frame");
-    const select = document.getElementById("model-select");
-    const captureBtn = document.getElementById("capture-btn");
-    const recordBtn = document.getElementById("record-btn");
-    const preview = document.getElementById("preview");
+    <!-- A-Frame + extras -->
+    <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/aframe-ar-hit-test-component@1.1.2/dist/aframe-ar-hit-test-component.min.js"></script>
 
-    // 🔄 Switch models
-    select.addEventListener("change", () => {
-      iframe.src = select.value;
-    });
-
-    // 📸 Take Screenshot
-    captureBtn.addEventListener("click", () => {
-      html2canvas(document.querySelector("#viewer")).then(canvas => {
-        preview.src = canvas.toDataURL("image/png");
-        preview.style.display = "block";
-
-        // auto download
-        const link = document.createElement("a");
-        link.download = "snapshot.png";
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-      });
-    });
-
-    // 🎥 Record Video
-    let recorder, chunks = [];
-    let recording = false;
-
-    recordBtn.addEventListener("click", async () => {
-      if (!recording) {
-        // Start Recording
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { mediaSource: "screen" },
-          audio: false
-        });
-        recorder = new MediaRecorder(stream);
-        recorder.ondataavailable = e => chunks.push(e.data);
-        recorder.onstop = e => {
-          const blob = new Blob(chunks, { type: "video/webm" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "recording.webm";
-          a.click();
-          chunks = [];
-        };
-        recorder.start();
-        recording = true;
-        recordBtn.textContent = "⏹ Stop Rec";
-      } else {
-        // Stop Recording
-        recorder.stop();
-        recording = false;
-        recordBtn.textContent = "🎥 Start Rec";
+    <style>
+      body { margin: 0; overflow: hidden; font-family: sans-serif; }
+      #overlay {
+        position: fixed;
+        bottom: 15px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 10px;
+        background: rgba(0,0,0,0.6);
+        padding: 10px;
+        border-radius: 10px;
+        z-index: 999;
       }
-    });
-  </script>
-</body>
+      select, button {
+        padding: 8px 12px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      select { background: white; color: black; }
+      button { background: #007bff; color: white; cursor: pointer; }
+      button:hover { background: #0056b3; }
+    </style>
+  </head>
+  <body>
+    <a-scene
+      renderer="colorManagement: true; physicallyCorrectLights"
+      xr-mode-ui="enabled: true"
+      embedded
+      vr-mode-ui="enabled: false"
+      webxr="optionalFeatures: hit-test, dom-overlay; overlayElement: #overlay">
+
+      <a-camera position="0 0 0"></a-camera>
+
+      <!-- Default model (hidden until placed) -->
+      <a-entity
+        id="model"
+        gltf-model="url(./models/robot.glb)"
+        visible="false"
+        scale="0.2 0.2 0.2"
+        shadow="cast: true">
+      </a-entity>
+
+      <!-- Hit test cursor -->
+      <a-entity
+        id="cursor"
+        ar-hit-test="target:#model; type:map; offset:0 0 0">
+      </a-entity>
+    </a-scene>
+
+    <!-- UI -->
+    <div id="overlay">
+      <select id="model-select">
+        <option value="./models/robot.glb">Robot</option>
+        <option value="./models/mascot.glb">Mascot</option>
+        <option value="./models/playground.glb">Playground</option>
+      </select>
+      <button id="place-btn">📍 Place</button>
+    </div>
+
+    <script>
+      const select = document.getElementById("model-select");
+      const placeBtn = document.getElementById("place-btn");
+      const model = document.getElementById("model");
+
+      // 🔄 Switch model before placing
+      select.addEventListener("change", () => {
+        model.setAttribute("gltf-model", "url(" + select.value + ")");
+        model.setAttribute("visible", "false"); // hide until placed
+      });
+
+      // 📍 Place model on surface
+      placeBtn.addEventListener("click", () => {
+        model.setAttribute("visible", "true");
+      });
+    </script>
+  </body>
 </html>
