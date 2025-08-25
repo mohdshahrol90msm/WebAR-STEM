@@ -2,107 +2,59 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Web AR with Models</title>
+  <title>Web AR Sketchfab Models</title>
   <style>
-    body { margin: 0; overflow: hidden; }
-    #ui {
-      position: fixed; top: 10px; left: 10px;
-      background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; color: white;
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100%;
+      width: 100%;
+      background: transparent;
     }
-    #photos { position: fixed; bottom: 10px; left: 10px; display: flex; gap: 10px; }
-    #photos img { width: 80px; border: 2px solid white; border-radius: 6px; cursor: pointer; }
+
+    #modelSelector {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      padding: 8px;
+      font-size: 16px;
+      border-radius: 8px;
+    }
+
+    iframe {
+      border: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+    }
   </style>
 </head>
 <body>
-  <div id="ui">
-    <select id="modelSelect">
-      <option value="model1.glb">Model 1</option>
-      <option value="model2.glb">Model 2</option>
-      <option value="model3.glb">Model 3</option>
-      <option value="model4.glb">Model 4</option>
-    </select>
-    <button id="snapBtn">📸 Snap</button>
-    <button id="recordBtn">⏺️ Record</button>
-    <button id="stopBtn">⏹ Stop</button>
-  </div>
-  <div id="photos"></div>
+  <select id="modelSelector">
+    <option value="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1">Model 1</option>
+    <option value="https://sketchfab.com/models/c9de125cb9d8407abed1dc8f6a4676a8/embed?autostart=1&transparent=1">Model 2</option>
+    <option value="https://sketchfab.com/models/bb6a8eeabedf49d5ad235405840ef013/embed?autostart=1&transparent=1">Model 3</option>
+    <option value="https://sketchfab.com/models/54e857fc6e4944608b87e47b833843c9/embed?autostart=1&transparent=1">Model 4</option>
+  </select>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/webxr/ARButton.js"></script>
+  <iframe id="viewer" allow="autoplay; fullscreen; vr"></iframe>
 
   <script>
-    let scene, camera, renderer, loader, currentModel, mediaRecorder, recordedChunks = [];
+    const selector = document.getElementById("modelSelector");
+    const viewer = document.getElementById("viewer");
 
-    init();
-    function init() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
-      renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.xr.enabled = true;
-      document.body.appendChild(renderer.domElement);
+    // Load the first model on start
+    viewer.src = selector.value;
 
-      document.body.appendChild(ARButton.createButton(renderer));
-
-      loader = new THREE.GLTFLoader();
-
-      loadModel(document.getElementById("modelSelect").value);
-
-      document.getElementById("modelSelect").addEventListener("change", (e)=>{
-        if (currentModel) scene.remove(currentModel);
-        loadModel(e.target.value);
-      });
-
-      document.getElementById("snapBtn").addEventListener("click", snapPhoto);
-      document.getElementById("recordBtn").addEventListener("click", startRecording);
-      document.getElementById("stopBtn").addEventListener("click", stopRecording);
-
-      renderer.setAnimationLoop(()=>{ renderer.render(scene, camera); });
-    }
-
-    function loadModel(url){
-      loader.load(url, gltf=>{
-        currentModel = gltf.scene;
-        currentModel.scale.set(0.5,0.5,0.5);  // Adjust size
-        currentModel.position.set(0,0,-1);   // Place in front of camera
-        scene.add(currentModel);
-      });
-    }
-
-    function snapPhoto(){
-      let link = document.createElement("a");
-      link.download = "snapshot.png";
-      link.href = renderer.domElement.toDataURL("image/png");
-      link.click();
-      
-      let img = document.createElement("img");
-      img.src = link.href;
-      img.onclick = ()=> img.remove();
-      document.getElementById("photos").appendChild(img);
-    }
-
-    function startRecording(){
-      recordedChunks = [];
-      let stream = renderer.domElement.captureStream();
-      mediaRecorder = new MediaRecorder(stream, { mimeType: "video/webm" });
-      mediaRecorder.ondataavailable = e=> recordedChunks.push(e.data);
-      mediaRecorder.onstop = saveRecording;
-      mediaRecorder.start();
-    }
-
-    function stopRecording(){
-      mediaRecorder.stop();
-    }
-
-    function saveRecording(){
-      let blob = new Blob(recordedChunks, { type: "video/webm" });
-      let url = URL.createObjectURL(blob);
-      let a = document.createElement("a");
-      a.href = url;
-      a.download = "recorded-video.webm";
-      a.click();
-    }
+    // Change model when dropdown changes
+    selector.addEventListener("change", () => {
+      viewer.src = selector.value;
+    });
   </script>
 </body>
 </html>
