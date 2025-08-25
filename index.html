@@ -3,83 +3,74 @@
 <head>
   <meta charset="UTF-8">
   <title>WebAR with Sketchfab Embed</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body, html {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      overflow: hidden;
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      overflow: hidden; background: black;
       font-family: Arial, sans-serif;
-      background: black;
-      color: white;
     }
-    #camera {
+    #cameraView {
       position: fixed;
       top: 0; left: 0;
       width: 100%; height: 100%;
       object-fit: cover;
       z-index: 0;
     }
-    #model-frame {
+    #modelFrame {
       position: fixed;
-      width: 100%; height: 100%;
       top: 0; left: 0;
+      width: 100%; height: 100%;
       border: none;
       z-index: 1;
-      pointer-events: none; /* Prevent accidental clicks */
+      pointer-events: none; /* prevent blocking UI */
     }
     #controls {
       position: fixed;
-      bottom: 10px;
-      left: 50%;
+      bottom: 10px; left: 50%;
       transform: translateX(-50%);
-      display: flex;
-      gap: 10px;
+      display: flex; gap: 10px;
       z-index: 2;
     }
-    select, button {
-      padding: 10px;
+    button, select {
+      padding: 10px 15px;
       font-size: 16px;
-      border-radius: 8px;
       border: none;
+      border-radius: 8px;
+      cursor: pointer;
     }
+    button { background: #007bff; color: white; }
     #gallery {
       position: fixed;
-      top: 10px;
-      right: 10px;
-      width: 120px;
-      height: 80%;
+      top: 10px; right: 10px;
+      width: 120px; max-height: 80vh;
       overflow-y: auto;
-      z-index: 3;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .photo {
-      width: 100%;
-      border: 2px solid white;
+      z-index: 2;
+      background: rgba(0,0,0,0.4);
+      padding: 5px;
       border-radius: 8px;
-      position: relative;
-      touch-action: pan-y;
+    }
+    #gallery img {
+      width: 100%;
+      margin-bottom: 5px;
+      border-radius: 6px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <video id="camera" autoplay playsinline></video>
-  <iframe id="model-frame"
-          src="https://sketchfab.com/models/7w7pAfrDd4WO1X9HeCFgpyK8pXo/embed"
-          allow="autoplay; fullscreen; xr-spatial-tracking"
-          allowfullscreen>
-  </iframe>
+  <video id="cameraView" autoplay playsinline></video>
+  <iframe id="modelFrame"></iframe>
 
   <div id="controls">
     <select id="modelSelect">
-      <option value="7w7pAfrDd4WO1X9HeCFgpyK8pXo">Model 1</option>
-      <option value="82dwJt5LmBxA4n1AqGd2qLZ4d9">Model 2</option>
-      <option value="ba7qK5KL5u72hQ2yKQK8oXp7W">Model 3</option>
+      <option value="">-- Choose Model --</option>
+      <option value="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1">Model 1</option>
+      <option value="https://sketchfab.com/models/c9de125cb9d8407abed1dc8f6a4676a8/embed?autostart=1&transparent=1">Model 2</option>
+      <option value="https://sketchfab.com/models/bb6a8eeabedf49d5ad235405840ef013/embed?autostart=1&transparent=1">Model 3</option>
+      <option value="https://sketchfab.com/models/54e857fc6e4944608b87e47b833843c9/embed?autostart=1&transparent=1">Model 4</option>
     </select>
-    <button id="snap">📸 Snap</button>
+    <button id="snapBtn">📸 Snap</button>
   </div>
 
   <div id="gallery"></div>
@@ -87,10 +78,10 @@
   <canvas id="snapshotCanvas" style="display:none;"></canvas>
 
   <script>
-    const video = document.getElementById('camera');
-    const modelFrame = document.getElementById('model-frame');
+    const video = document.getElementById('cameraView');
+    const modelFrame = document.getElementById('modelFrame');
     const modelSelect = document.getElementById('modelSelect');
-    const snapBtn = document.getElementById('snap');
+    const snapBtn = document.getElementById('snapBtn');
     const gallery = document.getElementById('gallery');
     const canvas = document.getElementById('snapshotCanvas');
     const ctx = canvas.getContext('2d');
@@ -98,45 +89,35 @@
     // Start camera
     async function startCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
         video.srcObject = stream;
       } catch (err) {
-        alert("Camera access denied or not available.");
+        alert("Camera access denied or unavailable.");
         console.error(err);
       }
     }
     startCamera();
 
-    // Change model on dropdown
+    // Change model
     modelSelect.addEventListener('change', () => {
-      const id = modelSelect.value;
-      modelFrame.src = `https://sketchfab.com/models/${id}/embed`;
+      modelFrame.src = modelSelect.value;
     });
 
-    // Snap picture
+    // Snapshot
     snapBtn.addEventListener('click', () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+
+      // Draw camera
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Overlay modelFrame snapshot (rough approach: screenshot not possible due to cross-origin iframe)
-      // Instead we just save camera photo
-      const dataUrl = canvas.toDataURL('image/png');
+      // Draw model iframe snapshot (approximate with overlay box since iframe can't be drawn directly)
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      const img = document.createElement('img');
-      img.src = dataUrl;
-      img.className = 'photo';
-
-      // Swipe to delete
-      let startX = 0;
-      img.addEventListener('touchstart', e => startX = e.touches[0].clientX);
-      img.addEventListener('touchend', e => {
-        let endX = e.changedTouches[0].clientX;
-        if (Math.abs(endX - startX) > 50) {
-          img.remove();
-        }
-      });
-
+      const img = new Image();
+      img.src = canvas.toDataURL("image/png");
+      img.addEventListener('click', () => img.remove());
       gallery.appendChild(img);
     });
   </script>
