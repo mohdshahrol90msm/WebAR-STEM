@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>AR Sketchfab Overlay</title>
+  <title>WebAR Sketchfab Overlay</title>
   <style>
     body, html {
       margin: 0;
@@ -12,9 +12,8 @@
       width: 100%;
       background: black;
     }
-
     #cameraView {
-      position: absolute;
+      position: fixed;
       top: 0;
       left: 0;
       width: 100%;
@@ -22,128 +21,136 @@
       object-fit: cover;
       z-index: 0;
     }
-
-    #viewer {
+    #modelContainer {
       position: absolute;
-      top: 0;
-      left: 0;
+      top: 50%;
+      left: 50%;
+      width: 300px;
+      height: 300px;
+      transform: translate(-50%, -50%);
+      z-index: 1;
+      touch-action: none;
+      resize: both;
+      overflow: hidden;
+    }
+    #modelFrame {
       width: 100%;
       height: 100%;
       border: none;
       background: transparent;
-      z-index: 1;
-      pointer-events: none; /* let camera view interact naturally */
     }
-
-    #modelSelector, #snapBtn {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      z-index: 2;
-      padding: 8px;
-      font-size: 16px;
-      border-radius: 8px;
-      margin-bottom: 5px;
-    }
-
     #snapBtn {
-      top: 60px;
-      background: #fff;
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 20px;
+      font-size: 18px;
       border: none;
+      border-radius: 12px;
+      background: #ff4081;
+      color: white;
       cursor: pointer;
-    }
-
-    #photos {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      display: flex;
-      overflow-x: auto;
-      z-index: 3;
-      background: rgba(0,0,0,0.5);
-    }
-
-    #photos img {
-      height: 100px;
-      margin: 5px;
-      border-radius: 8px;
-      cursor: pointer;
+      z-index: 2;
     }
   </style>
 </head>
 <body>
-  <!-- Rear Camera -->
-  <video id="cameraView" autoplay playsinline></video>
 
-  <!-- Sketchfab overlay (transparent, no controls) -->
-  <iframe id="viewer" allow="autoplay; fullscreen; vr"></iframe>
+<video id="cameraView" autoplay playsinline></video>
 
-  <!-- Controls -->
-  <select id="modelSelector">
-    <option value="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1&ui_controls=0&ui_infos=0&ui_stop=0">Model 1</option>
-    <option value="https://sketchfab.com/models/c9de125cb9d8407abed1dc8f6a4676a8/embed?autostart=1&transparent=1&ui_controls=0&ui_infos=0&ui_stop=0">Model 2</option>
-    <option value="https://sketchfab.com/models/bb6a8eeabedf49d5ad235405840ef013/embed?autostart=1&transparent=1&ui_controls=0&ui_infos=0&ui_stop=0">Model 3</option>
-    <option value="https://sketchfab.com/models/54e857fc6e4944608b87e47b833843c9/embed?autostart=1&transparent=1&ui_controls=0&ui_infos=0&ui_stop=0">Model 4</option>
-  </select>
-  <button id="snapBtn">📸 Snap</button>
+<div id="modelContainer">
+  <iframe 
+    id="modelFrame" 
+    src="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1&ui_controls=0&ui_infos=0&ui_watermark=0"
+    allow="autoplay; fullscreen; xr-spatial-tracking"
+    mozallowfullscreen="true"
+    webkitallowfullscreen="true">
+  </iframe>
+</div>
 
-  <!-- Captured photos -->
-  <div id="photos"></div>
+<button id="snapBtn">📸 Snap</button>
 
-  <script>
-    const video = document.getElementById('cameraView');
-    const viewer = document.getElementById('viewer');
-    const selector = document.getElementById('modelSelector');
-    const snapBtn = document.getElementById('snapBtn');
-    const photos = document.getElementById('photos');
+<canvas id="canvas" style="display:none;"></canvas>
 
-    // Init camera
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      .then(stream => {
-        video.srcObject = stream;
-      })
-      .catch(err => {
-        console.error("Camera error:", err);
-      });
+<script>
+  // Rear camera setup
+  const video = document.getElementById('cameraView');
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+    .then(stream => { video.srcObject = stream; })
+    .catch(err => console.error("Camera error:", err));
 
-    // Load default model
-    viewer.src = selector.value;
+  // Drag to move
+  const modelContainer = document.getElementById('modelContainer');
+  let isDragging = false, offsetX, offsetY;
 
-    // Change model
-    selector.addEventListener("change", () => {
-      viewer.src = selector.value;
-    });
+  modelContainer.addEventListener("pointerdown", e => {
+    isDragging = true;
+    offsetX = e.clientX - modelContainer.offsetLeft;
+    offsetY = e.clientY - modelContainer.offsetTop;
+  });
+  window.addEventListener("pointerup", () => isDragging = false);
+  window.addEventListener("pointermove", e => {
+    if (isDragging) {
+      modelContainer.style.left = (e.clientX - offsetX) + "px";
+      modelContainer.style.top = (e.clientY - offsetY) + "px";
+    }
+  });
 
-    // Snap photo
-    snapBtn.addEventListener("click", () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      const ctx = canvas.getContext("2d");
+  // Pinch to resize
+  let initialDist = null, initialWidth, initialHeight;
+  window.addEventListener("touchstart", e => {
+    if (e.touches.length === 2) {
+      initialDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      initialWidth = modelContainer.offsetWidth;
+      initialHeight = modelContainer.offsetHeight;
+    }
+  });
+  window.addEventListener("touchmove", e => {
+    if (e.touches.length === 2 && initialDist) {
+      let newDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      let scale = newDist / initialDist;
+      modelContainer.style.width = (initialWidth * scale) + "px";
+      modelContainer.style.height = (initialHeight * scale) + "px";
+    }
+  });
+  window.addEventListener("touchend", () => { initialDist = null; });
 
-      // Draw camera
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  // Snap & download
+  document.getElementById("snapBtn").addEventListener("click", () => {
+    const canvas = document.getElementById("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
 
-      // Draw Sketchfab overlay
-      ctx.drawImage(viewer, 0, 0, canvas.width, canvas.height);
+    // Draw camera frame
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Save photo
-      const img = new Image();
-      img.src = canvas.toDataURL("image/png");
-      img.onclick = () => {
-        if (confirm("Delete this photo?")) {
-          img.remove();
-        }
-      };
-      photos.appendChild(img);
+    // Draw model iframe snapshot (not possible due to cross-origin) → fallback: show modelContainer box
+    html2canvas(modelContainer).then(modelCanvas => {
+      ctx.drawImage(modelCanvas, modelContainer.offsetLeft, modelContainer.offsetTop);
 
-      // Download photo automatically
+      // Auto download
       const link = document.createElement("a");
       link.download = "snapshot.png";
-      link.href = img.src;
+      link.href = canvas.toDataURL("image/png");
       link.click();
     });
-  </script>
+  });
+
+  // Load html2canvas
+  (function loadHtml2Canvas(){
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+    document.body.appendChild(script);
+  })();
+</script>
+
 </body>
 </html>
