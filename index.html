@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Web AR Sketchfab Models</title>
+  <title>AR Sketchfab Overlay</title>
   <style>
     body, html {
       margin: 0;
@@ -10,50 +10,139 @@
       overflow: hidden;
       height: 100%;
       width: 100%;
-      background: transparent;
+      background: black;
     }
 
-    #modelSelector {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      z-index: 10;
-      padding: 8px;
-      font-size: 16px;
-      border-radius: 8px;
-    }
-
-    iframe {
-      border: none;
+    #cameraView {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+
+    #viewer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
       background: transparent;
+      z-index: 1;
+      pointer-events: none; /* let camera view interact naturally */
+    }
+
+    #modelSelector, #snapBtn {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 2;
+      padding: 8px;
+      font-size: 16px;
+      border-radius: 8px;
+      margin-bottom: 5px;
+    }
+
+    #snapBtn {
+      top: 60px;
+      background: #fff;
+      border: none;
+      cursor: pointer;
+    }
+
+    #photos {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      display: flex;
+      overflow-x: auto;
+      z-index: 3;
+      background: rgba(0,0,0,0.5);
+    }
+
+    #photos img {
+      height: 100px;
+      margin: 5px;
+      border-radius: 8px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <select id="modelSelector">
-    <option value="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1">Model 1</option>
-    <option value="https://sketchfab.com/models/c9de125cb9d8407abed1dc8f6a4676a8/embed?autostart=1&transparent=1">Model 2</option>
-    <option value="https://sketchfab.com/models/bb6a8eeabedf49d5ad235405840ef013/embed?autostart=1&transparent=1">Model 3</option>
-    <option value="https://sketchfab.com/models/54e857fc6e4944608b87e47b833843c9/embed?autostart=1&transparent=1">Model 4</option>
-  </select>
+  <!-- Rear Camera -->
+  <video id="cameraView" autoplay playsinline></video>
 
+  <!-- Sketchfab overlay (transparent, no controls) -->
   <iframe id="viewer" allow="autoplay; fullscreen; vr"></iframe>
 
-  <script>
-    const selector = document.getElementById("modelSelector");
-    const viewer = document.getElementById("viewer");
+  <!-- Controls -->
+  <select id="modelSelector">
+    <option value="https://sketchfab.com/models/59fc99d8dcb146f3a6c16dbbcc4680da/embed?autostart=1&transparent=1&ui_controls=0&ui_infos=0&ui_stop=0">Model 1</option>
+    <option value="https://sketchfab.com/models/c9de125cb9d8407abed1dc8f6a4676a8/embed?autostart=1&transparent=1&ui_controls=0&ui_infos=0&ui_stop=0">Model 2</option>
+    <option value="https://sketchfab.com/models/bb6a8eeabedf49d5ad235405840ef013/embed?autostart=1&transparent=1&ui_controls=0&ui_infos=0&ui_stop=0">Model 3</option>
+    <option value="https://sketchfab.com/models/54e857fc6e4944608b87e47b833843c9/embed?autostart=1&transparent=1&ui_controls=0&ui_infos=0&ui_stop=0">Model 4</option>
+  </select>
+  <button id="snapBtn">📸 Snap</button>
 
-    // Load the first model on start
+  <!-- Captured photos -->
+  <div id="photos"></div>
+
+  <script>
+    const video = document.getElementById('cameraView');
+    const viewer = document.getElementById('viewer');
+    const selector = document.getElementById('modelSelector');
+    const snapBtn = document.getElementById('snapBtn');
+    const photos = document.getElementById('photos');
+
+    // Init camera
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+      .then(stream => {
+        video.srcObject = stream;
+      })
+      .catch(err => {
+        console.error("Camera error:", err);
+      });
+
+    // Load default model
     viewer.src = selector.value;
 
-    // Change model when dropdown changes
+    // Change model
     selector.addEventListener("change", () => {
       viewer.src = selector.value;
+    });
+
+    // Snap photo
+    snapBtn.addEventListener("click", () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      const ctx = canvas.getContext("2d");
+
+      // Draw camera
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Draw Sketchfab overlay
+      ctx.drawImage(viewer, 0, 0, canvas.width, canvas.height);
+
+      // Save photo
+      const img = new Image();
+      img.src = canvas.toDataURL("image/png");
+      img.onclick = () => {
+        if (confirm("Delete this photo?")) {
+          img.remove();
+        }
+      };
+      photos.appendChild(img);
+
+      // Download photo automatically
+      const link = document.createElement("a");
+      link.download = "snapshot.png";
+      link.href = img.src;
+      link.click();
     });
   </script>
 </body>
