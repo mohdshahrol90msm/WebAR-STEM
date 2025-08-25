@@ -1,19 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MindAR Web AR Photobooth</title>
-  <script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <meta charset="UTF-8">
+  <title>WebAR with Sketchfab Models</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  
   <style>
-    body, html {
+    body {
       margin: 0;
-      padding: 0;
       overflow: hidden;
       background: black;
+      font-family: sans-serif;
+    }
+    #viewer {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+    iframe {
       width: 100%;
       height: 100%;
+      border: none;
+      position: absolute;
+      top: 0;
+      left: 0;
     }
     #controls {
       position: absolute;
@@ -21,73 +34,112 @@
       left: 50%;
       transform: translateX(-50%);
       display: flex;
-      flex-direction: column;
       gap: 10px;
-      background: rgba(0,0,0,0.4);
-      padding: 10px;
-      border-radius: 10px;
-      z-index: 10;
+      z-index: 20;
     }
-    select, button {
-      padding: 10px 20px;
-      font-size: 16px;
+    button, select {
+      padding: 8px 12px;
+      font-size: 14px;
       border: none;
-      border-radius: 8px;
+      border-radius: 6px;
       background: #007bff;
       color: white;
       cursor: pointer;
     }
-    select {
-      background: white;
-      color: black;
+    button:hover, select:hover {
+      background: #0056b3;
+    }
+    #preview {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      max-width: 150px;
+      border: 2px solid white;
+      display: none;
+      z-index: 30;
     }
   </style>
 </head>
 <body>
-  <!-- AR Scene -->
-  <a-scene mindar-image="autoStart: true; uiScanning: false; uiLoading: false;" embedded color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
-    <a-camera position="0 0 0" look-controls="enabled: true"></a-camera>
-  </a-scene>
-
-  <!-- Controls -->
-  <div id="controls">
-    <select id="modelSelector">
-      <option value="">-- Choose a Model --</option>
-      <option value="https://modelviewer.dev/shared-assets/models/Astronaut.glb">Astronaut</option>
-      <option value="https://modelviewer.dev/shared-assets/models/RobotExpressive.glb">Robot</option>
-    </select>
-    <button id="addModelBtn">➕ Add Model</button>
-    <button id="photoBtn">📸 Take Photo</button>
+  <div id="viewer">
+    <!-- Default model -->
+    <iframe id="sketchfab-frame" 
+      src="https://sketchfab.com/models/7w7pAfrEYVmqVJzszZ3j84FhV4D/embed" 
+      allow="autoplay; fullscreen; vr">
+    </iframe>
+    
+    <!-- Controls -->
+    <div id="controls">
+      <select id="model-select">
+        <option value="https://sketchfab.com/models/7w7pAfrEYVmqVJzszZ3j84FhV4D/embed">Model 1</option>
+        <option value="https://sketchfab.com/models/ba5M3K1gbx5hYn1CeJ2s6J7UV/embed">Model 2</option>
+        <option value="https://sketchfab.com/models/efT9sYeSgU2GqTtRzjZr3F0h2/embed">Model 3</option>
+        <!-- add up to 10 -->
+      </select>
+      <button id="capture-btn">📸 Picture</button>
+      <button id="record-btn">🎥 Start Rec</button>
+    </div>
+    
+    <!-- Screenshot Preview -->
+    <img id="preview" alt="screenshot preview"/>
   </div>
 
   <script>
-    const scene = document.querySelector('a-scene');
+    const iframe = document.getElementById("sketchfab-frame");
+    const select = document.getElementById("model-select");
+    const captureBtn = document.getElementById("capture-btn");
+    const recordBtn = document.getElementById("record-btn");
+    const preview = document.getElementById("preview");
 
-    // Add selected model into scene
-    document.getElementById('addModelBtn').addEventListener('click', () => {
-      const modelUrl = document.getElementById('modelSelector').value;
-      if (!modelUrl) return;
-      const entity = document.createElement('a-entity');
-      entity.setAttribute('gltf-model', modelUrl);
-      entity.setAttribute('scale', '0.5 0.5 0.5');
-      entity.setAttribute('position', `${(Math.random() - 0.5) * 2} ${(Math.random() - 0.5) * 2} -3`);
-      entity.setAttribute('gesture-handler', '');
-      scene.appendChild(entity);
+    // 🔄 Switch models
+    select.addEventListener("change", () => {
+      iframe.src = select.value;
     });
 
-    // Take photo
-    document.getElementById('photoBtn').addEventListener('click', () => {
-      const canvas = scene.renderer.domElement;
-      const link = document.createElement('a');
-      link.download = 'photobooth.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+    // 📸 Take Screenshot
+    captureBtn.addEventListener("click", () => {
+      html2canvas(document.querySelector("#viewer")).then(canvas => {
+        preview.src = canvas.toDataURL("image/png");
+        preview.style.display = "block";
+
+        // auto download
+        const link = document.createElement("a");
+        link.download = "snapshot.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      });
     });
 
-    // Gesture handler component
-    AFRAME.registerComponent('gesture-handler', {
-      init: function () {
-        this.el.setAttribute('gesture-detector', '');
+    // 🎥 Record Video
+    let recorder, chunks = [];
+    let recording = false;
+
+    recordBtn.addEventListener("click", async () => {
+      if (!recording) {
+        // Start Recording
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { mediaSource: "screen" },
+          audio: false
+        });
+        recorder = new MediaRecorder(stream);
+        recorder.ondataavailable = e => chunks.push(e.data);
+        recorder.onstop = e => {
+          const blob = new Blob(chunks, { type: "video/webm" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "recording.webm";
+          a.click();
+          chunks = [];
+        };
+        recorder.start();
+        recording = true;
+        recordBtn.textContent = "⏹ Stop Rec";
+      } else {
+        // Stop Recording
+        recorder.stop();
+        recording = false;
+        recordBtn.textContent = "🎥 Start Rec";
       }
     });
   </script>
